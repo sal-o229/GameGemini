@@ -1,0 +1,1337 @@
+<meta name='viewport' content='width=device-width, initial-scale=1'/>```html
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Подземелье Теней -- Telegram Mini App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Асинхронная загрузка Telegram WebApp SDK без блокировки рендера -->
+    <script async src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700;900&display=swap" rel="stylesheet">
+    <style>
+        /* Жесткие размеры и фолбэк-фон для исключения черного экрана в любом WebView и iframe */
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            min-height: 300px;
+            background-color: #14121d;
+            color: #f8fafc;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            min-height: 300px;
+            background-color: #14121d;
+            overflow: hidden;
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background-color: #14121d;
+        }
+
+        /* Сенсорные кнопки управления */
+        .control-btn {
+            background: rgba(30, 27, 46, 0.88);
+            border: 2px solid rgba(139, 92, 246, 0.55);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+            transition: transform 0.05s ease, background-color 0.05s ease, border-color 0.05s ease;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .control-btn.pressed,
+        .control-btn:active {
+            transform: scale(0.92);
+            background: rgba(124, 58, 237, 0.55);
+            border-color: #c4b5fd;
+        }
+
+        /* Кнопки интерфейса */
+        .pixel-btn {
+            background: linear-gradient(180deg, #8b5cf6 0%, #6d28d9 100%);
+            border: 2px solid #c4b5fd;
+            box-shadow: 0 4px 0 #4c1d95, 0 8px 20px rgba(109, 40, 217, 0.45);
+            transition: transform 0.08s ease, box-shadow 0.08s ease;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .pixel-btn:active {
+            transform: translateY(3px);
+            box-shadow: 0 1px 0 #4c1d95, 0 4px 10px rgba(109, 40, 217, 0.4);
+        }
+
+        .safe-top {
+            padding-top: max(12px, env(safe-area-inset-top));
+        }
+
+        .safe-bottom {
+            padding-bottom: max(16px, env(safe-area-inset-bottom));
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <!-- Игровой холст -->
+        <canvas id="gameCanvas"></canvas>
+
+        <!-- Верхний HUD (Здоровье, Монеты, Уровень, Звук/Пауза) -->
+        <div id="hud" class="hidden absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-3 sm:px-5 safe-top pointer-events-none">
+            <!-- Левая панель: Сердца и Монеты -->
+            <div class="flex items-center gap-2 sm:gap-3 pointer-events-auto">
+                <div id="hearts-container" class="flex items-center gap-1 bg-slate-950/80 border border-purple-500/40 px-2.5 py-1.5 rounded-xl shadow-lg">
+                    <!-- Сердца генерируются через JS -->
+                </div>
+                <div class="flex items-center gap-1.5 bg-slate-950/80 border border-amber-500/40 px-3 py-1.5 rounded-xl shadow-lg">
+                    <span class="text-amber-400 text-sm sm:text-base font-black">●</span>
+                    <span id="coins-text" class="text-amber-300 font-bold text-sm sm:text-base">0/0</span>
+                </div>
+            </div>
+
+            <!-- Центр: Текущий уровень -->
+            <div class="bg-slate-950/80 border border-slate-700/70 px-3 py-1.5 rounded-xl shadow-lg">
+                <span id="level-text" class="text-purple-200 font-bold text-xs sm:text-sm tracking-wide">УРОВЕНЬ 1</span>
+            </div>
+
+            <!-- Правая панель: Звук и Рестарт -->
+            <div class="flex items-center gap-2 pointer-events-auto">
+                <button id="btn-sound" aria-label="Звук" class="bg-slate-950/80 border border-slate-700/70 active:scale-95 p-2 rounded-xl text-slate-200 shadow-lg">
+                    <svg id="icon-sound-on" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"/>
+                    </svg>
+                    <svg id="icon-sound-off" class="w-5 h-5 hidden text-rose-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/>
+                    </svg>
+                </button>
+                <button id="btn-restart-hud" aria-label="Заново" class="bg-slate-950/80 border border-slate-700/70 active:scale-95 p-2 rounded-xl text-slate-200 shadow-lg">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Сенсорные кнопки управления (Мультитач) -->
+        <div id="touch-controls" class="hidden absolute bottom-0 left-0 right-0 z-20 flex items-end justify-between px-4 sm:px-8 safe-bottom pointer-events-none">
+            <!-- Влево / Вправо -->
+            <div class="flex items-center gap-3 sm:gap-4 pointer-events-auto">
+                <button id="btn-left" aria-label="Влево" class="control-btn w-16 h-16 sm:w-20 sm:h-20 rounded-2xl flex items-center justify-center text-white">
+                    <svg class="w-8 h-8 sm:w-9 sm:h-9" fill="none" stroke="currentColor" stroke-width="2.8" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/>
+                    </svg>
+                </button>
+                <button id="btn-right" aria-label="Вправо" class="control-btn w-16 h-16 sm:w-20 sm:h-20 rounded-2xl flex items-center justify-center text-white">
+                    <svg class="w-8 h-8 sm:w-9 sm:h-9" fill="none" stroke="currentColor" stroke-width="2.8" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Прыжок -->
+            <div class="pointer-events-auto">
+                <button id="btn-jump" aria-label="Прыжок" class="control-btn w-20 h-20 sm:w-24 sm:h-24 rounded-full flex items-center justify-center text-purple-100 border-purple-400/70">
+                    <svg class="w-9 h-9 sm:w-10 sm:h-10" fill="none" stroke="currentColor" stroke-width="2.8" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Стартовый экран (полупрозрачный, чтобы на фоне сразу было видно живое подземелье) -->
+        <div id="screen-start" class="absolute inset-0 z-30 flex flex-col items-center justify-center p-5 bg-slate-950/45">
+            <div class="max-w-sm w-full bg-slate-900/90 border border-purple-500/40 rounded-3xl p-6 text-center shadow-2xl">
+                <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-purple-600/25 border border-purple-400/50 mb-3 text-purple-300">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                </div>
+                <h1 class="text-2xl sm:text-3xl font-black tracking-tight text-white mb-1">ПОДЗЕМЕЛЬЕ ТЕНЕЙ</h1>
+                <p id="welcome-user" class="text-purple-300 text-xs sm:text-sm font-medium mb-4">Платформер для Telegram Mini Apps</p>
+
+                <div class="bg-slate-950/75 rounded-2xl p-3.5 mb-5 text-left text-xs sm:text-sm text-slate-300 space-y-2 border border-slate-800">
+                    <div class="flex items-center gap-2.5">
+                        <span class="text-amber-400 font-bold">●</span>
+                        <span>Собирай золотые монеты, в том числе на верхних уступах</span>
+                    </div>
+                    <div class="flex items-center gap-2.5">
+                        <span class="text-emerald-400 font-bold">▲</span>
+                        <span>Прыгай на слизней сверху и избегай острых шипов</span>
+                    </div>
+                    <div class="flex items-center gap-2.5">
+                        <span class="text-purple-400 font-bold">◈</span>
+                        <span>Доберись до фиолетового портала выхода</span>
+                    </div>
+                </div>
+
+                <button id="btn-start" class="pixel-btn w-full py-3.5 rounded-2xl text-white font-black text-base sm:text-lg tracking-wide cursor-pointer">
+                    ИГРАТЬ
+                </button>
+            </div>
+        </div>
+
+        <!-- Экран окончания игры / перехода между уровнями -->
+        <div id="screen-modal" class="hidden absolute inset-0 z-30 flex flex-col items-center justify-center p-5 bg-slate-950/75">
+            <div class="max-w-sm w-full bg-slate-900/95 border border-purple-500/40 rounded-3xl p-6 text-center shadow-2xl">
+                <h2 id="modal-title" class="text-2xl sm:text-3xl font-black text-white mb-2">УРОВЕНЬ ПРОЙДЕН!</h2>
+                <p id="modal-subtitle" class="text-slate-300 text-sm mb-5">Отличная работа, искатель приключений!</p>
+
+                <div class="grid grid-cols-2 gap-3 mb-6">
+                    <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3">
+                        <div class="text-xs text-slate-400 mb-0.5">Монеты</div>
+                        <div id="modal-coins" class="text-lg font-black text-amber-400">0 / 0</div>
+                    </div>
+                    <div class="bg-slate-950/80 border border-slate-800 rounded-2xl p-3">
+                        <div class="text-xs text-slate-400 mb-0.5">Счёт</div>
+                        <div id="modal-score" class="text-lg font-black text-purple-300">0</div>
+                    </div>
+                </div>
+
+                <button id="btn-modal-action" class="pixel-btn w-full py-3.5 rounded-2xl text-white font-black text-base tracking-wide cursor-pointer">
+                    ДАЛЕЕ
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * ============================================================================
+         * 1. БЕЗОПАСНАЯ ИНТЕГРАЦИЯ TELEGRAM MINI APP (АСИНХРОННАЯ, БЕЗ БЛОКИРОВОК)
+         * ============================================================================
+         */
+        let tgApp = null;
+
+        function initTelegramSafe() {
+            try {
+                if (window.Telegram && window.Telegram.WebApp) {
+                    tgApp = window.Telegram.WebApp;
+                    tgApp.ready();
+                    if (typeof tgApp.expand === 'function') {
+                        tgApp.expand();
+                    }
+                    if (typeof tgApp.disableVerticalSwipes === 'function') {
+                        tgApp.disableVerticalSwipes();
+                    }
+                    if (typeof tgApp.setHeaderColor === 'function') {
+                        tgApp.setHeaderColor('#14121d');
+                    }
+                    if (typeof tgApp.setBackgroundColor === 'function') {
+                        tgApp.setBackgroundColor('#14121d');
+                    }
+                    const user = tgApp.initDataUnsafe && tgApp.initDataUnsafe.user;
+                    if (user && user.first_name) {
+                        const welcomeEl = document.getElementById('welcome-user');
+                        if (welcomeEl) {
+                            welcomeEl.textContent = 'Удачи в подземелье, ' + user.first_name + '!';
+                        }
+                    }
+                }
+            } catch (e) {
+                // Игнорируем ошибки вне Telegram или в изолированном iframe
+            }
+        }
+
+        function triggerHaptic(type) {
+            try {
+                if (!tgApp) initTelegramSafe();
+                if (!tgApp || !tgApp.HapticFeedback) return;
+                if (type === 'light') tgApp.HapticFeedback.impactOccurred('light');
+                else if (type === 'medium') tgApp.HapticFeedback.impactOccurred('medium');
+                else if (type === 'heavy') tgApp.HapticFeedback.impactOccurred('heavy');
+                else if (type === 'success') tgApp.HapticFeedback.notificationOccurred('success');
+                else if (type === 'error') tgApp.HapticFeedback.notificationOccurred('error');
+            } catch (e) {}
+        }
+
+        // Пытаемся инициализировать сразу и повторно через 300мс (на случай асинхронной подгрузки скрипта)
+        initTelegramSafe();
+        setTimeout(initTelegramSafe, 300);
+
+        /**
+         * ============================================================================
+         * 2. ЗВУКОВОЙ СИНТЕЗАТОР (WEB AUDIO API БЕЗ ВНЕШНИХ ФАЙЛОВ)
+         * ============================================================================
+         */
+        const SoundFX = {
+            ctx: null,
+            enabled: true,
+            init() {
+                try {
+                    if (!this.ctx) {
+                        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                        if (AudioCtx) this.ctx = new AudioCtx();
+                    }
+                    if (this.ctx && this.ctx.state === 'suspended') {
+                        this.ctx.resume();
+                    }
+                } catch (e) {}
+            },
+            playTone(freqStart, freqEnd, duration, type = 'square', vol = 0.08) {
+                if (!this.enabled) return;
+                try {
+                    this.init();
+                    if (!this.ctx) return;
+                    const now = this.ctx.currentTime;
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = type;
+                    osc.frequency.setValueAtTime(freqStart, now);
+                    if (freqEnd !== freqStart) {
+                        osc.frequency.exponentialRampToValueAtTime(Math.max(20, freqEnd), now + duration);
+                    }
+                    gain.gain.setValueAtTime(vol, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now);
+                    osc.stop(now + duration);
+                } catch (e) {}
+            },
+            jump() { this.playTone(230, 560, 0.14, 'square', 0.07); },
+            coin() {
+                this.playTone(880, 1180, 0.07, 'sine', 0.1);
+                setTimeout(() => this.playTone(1320, 1560, 0.11, 'sine', 0.09), 55);
+            },
+            stomp() { this.playTone(300, 110, 0.14, 'sawtooth', 0.09); },
+            hurt() { this.playTone(190, 65, 0.26, 'sawtooth', 0.12); },
+            portal() {
+                this.playTone(440, 660, 0.12, 'triangle', 0.1);
+                setTimeout(() => this.playTone(660, 990, 0.18, 'triangle', 0.1), 100);
+            }
+        };
+
+        /**
+         * ============================================================================
+         * 3. КАРТЫ УРОВНЕЙ (3 УРОВНЯ С ВЕРХНИМИ ПЛАТФОРМАМИ ДЛЯ ВЫСОКОГО ПРЫЖКА)
+         * # - Каменная стена / пол
+         * = - Каменная платформа (можно запрыгнуть снизу)
+         * C - Золотая монета
+         * ^ - Шипы
+         * E - Ядовитый слизень
+         * T - Настенный факел
+         * P - Старт игрока
+         * D - Магический портал выхода
+         * ============================================================================
+         */
+        const TILE_SIZE = 40;
+
+        const LEVELS = [
+            // УРОВЕНЬ 1: Вход в катакомбы
+            [
+                "##########################################",
+                "#                 C                      #",
+                "#   T            ===               T     #",
+                "#                 ###                    #",
+                "#        C                   C         D #",
+                "#       ###                 ###       ####",
+                "#                  T                     #",
+                "#   P        C           C               #",
+                "######     #####   ^   #####     #########",
+                "#          #   #  ###  #   #             #",
+                "#   T      #   #       #   #   C   E   T #",
+                "#          #   #########   #  ############",
+                "#     C    #               #             #",
+                "#   #####  #   T   C   T   #      ^      #",
+                "#          #      ###      #     ###     #",
+                "#   E      #               #             #",
+                "##########################################"
+            ],
+            // УРОВЕНЬ 2: Забытые склепы
+            [
+                "##################################################",
+                "#                        C                       #",
+                "#  T             C      ===       C           T  #",
+                "#               ===              ===             #",
+                "#        C                                     D #",
+                "#       ===          T   C   T                ####",
+                "#                       ===                      #",
+                "#  P           ^                  C              #",
+                "#####         ###       E        ===      ^      #",
+                "#                     #####              ###     #",
+                "#      C   T                         C           #",
+                "#     ===           C               ===          #",
+                "#                  ===       ^                   #",
+                "#          E                ###          E       #",
+                "#        #####                         #####     #",
+                "#   T              ^   C   ^                  T  #",
+                "##################################################"
+            ],
+            // УРОВЕНЬ 3: Тронный зал Тьмы
+            [
+                "########################################################",
+                "#                           C                          #",
+                "#   T              C       ===       C              T  #",
+                "#                 ===               ===                #",
+                "#          C                                         D #",
+                "#         ===            T   C   T                  ####",
+                "#                           ===                        #",
+                "#   P            ^                        C            #",
+                "#####           ###        E             ===     ^     #",
+                "#                        #####                  ###    #",
+                "#       C   T                        C                 #",
+                "#      ===          ^               ===                #",
+                "#                  ###       E                         #",
+                "#           E              #####          ^            #",
+                "#         #####                          ###           #",
+                "#   T               ^   C    ^     C             E  T  #",
+                "########################################################"
+            ]
+        ];
+
+        /**
+         * ============================================================================
+         * 4. ИГРОВОЙ ДВИЖОК (МАКСИМАЛЬНО СОВМЕСТИМЫЙ 2D CANVAS БЕЗ ЧЕРНОГО ЭКРАНА)
+         * ============================================================================
+         */
+        const canvas = document.getElementById('gameCanvas');
+        // Стандартный контекст без параметров alpha/desynchronized для 100% совместимости на Android/iOS
+        const ctx = canvas.getContext('2d');
+
+        let currentDpr = Math.min(window.devicePixelRatio || 1, 1.5);
+        const MAX_PARTICLES = 65;
+        const FIXED_DT = 1 / 60;
+        let physicsAccumulator = 0;
+
+        // Ссылки на DOM-элементы
+        const hudEl = document.getElementById('hud');
+        const touchControlsEl = document.getElementById('touch-controls');
+        const screenStartEl = document.getElementById('screen-start');
+        const screenModalEl = document.getElementById('screen-modal');
+        const heartsContainerEl = document.getElementById('hearts-container');
+        const coinsTextEl = document.getElementById('coins-text');
+        const levelTextEl = document.getElementById('level-text');
+
+        // Состояние игры
+        const game = {
+            state: 'start', // 'start' | 'playing' | 'levelComplete' | 'gameOver' | 'victory'
+            levelIndex: 0,
+            score: 0,
+            coinsCollected: 0,
+            totalCoins: 0,
+            camera: { x: 0, y: 0 },
+            shakeTime: 0,
+            shakeIntensity: 0,
+            particles: [],
+            time: 0
+        };
+
+        // Геометрия текущего уровня
+        let levelData = {
+            width: 0,
+            height: 0,
+            solids: [],
+            platforms: [],
+            spikes: [],
+            coins: [],
+            enemies: [],
+            torches: [],
+            portal: null,
+            spawn: { x: 80, y: 80 }
+        };
+
+        // Игрок (высокий прыжок jumpForce: -660 для уверенного преодоления 4.5-5 блоков)
+        const player = {
+            x: 80,
+            y: 80,
+            w: 26,
+            h: 34,
+            vx: 0,
+            vy: 0,
+            speed: 260,
+            jumpForce: -660,
+            gravity: 1280,
+            grounded: false,
+            coyoteTimer: 0,
+            jumpBufferTimer: 0,
+            facing: 1,
+            hp: 3,
+            maxHp: 3,
+            invulnTimer: 0,
+            animTimer: 0
+        };
+
+        // Состояние ввода
+        const input = {
+            left: false,
+            right: false,
+            jump: false,
+            jumpJustPressed: false
+        };
+
+        /**
+         * ============================================================================
+         * 5. ЗАГРУЗКА УРОВНЯ И HUD
+         * ============================================================================
+         */
+        function loadLevel(index) {
+            game.levelIndex = index;
+            const map = LEVELS[index];
+            levelData = {
+                width: map[0].length * TILE_SIZE,
+                height: map.length * TILE_SIZE,
+                solids: [],
+                platforms: [],
+                spikes: [],
+                coins: [],
+                enemies: [],
+                torches: [],
+                portal: null,
+                spawn: { x: 80, y: 80 }
+            };
+
+            game.coinsCollected = 0;
+            game.totalCoins = 0;
+            game.particles = [];
+
+            for (let row = 0; row < map.length; row++) {
+                const line = map[row];
+                for (let col = 0; col < line.length; col++) {
+                    const ch = line[col];
+                    const x = col * TILE_SIZE;
+                    const y = row * TILE_SIZE;
+
+                    if (ch === '#') {
+                        levelData.solids.push({ x, y, w: TILE_SIZE, h: TILE_SIZE });
+                    } else if (ch === '=') {
+                        levelData.platforms.push({ x, y, w: TILE_SIZE, h: 14 });
+                    } else if (ch === '^') {
+                        levelData.spikes.push({ x: x + 4, y: y + 18, w: TILE_SIZE - 8, h: TILE_SIZE - 18 });
+                    } else if (ch === 'C') {
+                        game.totalCoins++;
+                        levelData.coins.push({
+                            x: x + TILE_SIZE / 2,
+                            y: y + TILE_SIZE / 2,
+                            r: 10,
+                            collected: false,
+                            bobOffset: Math.random() * Math.PI * 2
+                        });
+                    } else if (ch === 'E') {
+                        levelData.enemies.push({
+                            x: x + 4,
+                            y: y + 12,
+                            w: 32,
+                            h: 28,
+                            vx: 78,
+                            dir: Math.random() > 0.5 ? 1 : -1,
+                            anim: Math.random() * 5
+                        });
+                    } else if (ch === 'T') {
+                        levelData.torches.push({
+                            x: x + TILE_SIZE / 2,
+                            y: y + TILE_SIZE / 2,
+                            flicker: Math.random() * 10
+                        });
+                    } else if (ch === 'P') {
+                        levelData.spawn = { x: x + 7, y: y + 4 };
+                    } else if (ch === 'D') {
+                        levelData.portal = { x: x + 4, y: y - 8, w: TILE_SIZE - 8, h: TILE_SIZE + 8 };
+                    }
+                }
+            }
+
+            resetPlayerPosition();
+            updateHUD();
+        }
+
+        function resetPlayerPosition() {
+            player.x = levelData.spawn.x;
+            player.y = levelData.spawn.y;
+            player.vx = 0;
+            player.vy = 0;
+            player.grounded = false;
+            player.coyoteTimer = 0;
+            player.jumpBufferTimer = 0;
+            player.invulnTimer = 0.8;
+
+            const viewW = Math.max(320, canvas.width / currentDpr);
+            const viewH = Math.max(320, canvas.height / currentDpr);
+            game.camera.x = Math.max(0, Math.min(levelData.width - viewW, player.x + player.w / 2 - viewW / 2));
+            game.camera.y = Math.max(0, Math.min(levelData.height - viewH, player.y + player.h / 2 - viewH / 2 + 20));
+        }
+
+        function updateHUD() {
+            let heartsHTML = '';
+            for (let i = 0; i < player.maxHp; i++) {
+                const active = i < player.hp;
+                heartsHTML += `<svg class="w-4 h-4 sm:w-5 sm:h-5 ${active ? 'text-rose-500' : 'text-slate-700'}" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd"/>
+                </svg>`;
+            }
+            heartsContainerEl.innerHTML = heartsHTML;
+            coinsTextEl.textContent = `${game.coinsCollected}/${game.totalCoins}`;
+            levelTextEl.textContent = `УРОВЕНЬ ${game.levelIndex + 1}/${LEVELS.length}`;
+        }
+
+        /**
+         * ============================================================================
+         * 6. УПРАВЛЕНИЕ (МУЛЬТИТАЧ ДЛЯ ТЕЛЕФОНА + КЛАВИАТУРА ДЛЯ ПК)
+         * ============================================================================
+         */
+        function bindTouchButton(btnId, inputKey, isJump = false) {
+            const btn = document.getElementById(btnId);
+            if (!btn) return;
+
+            const press = (e) => {
+                if (e.cancelable) e.preventDefault();
+                SoundFX.init();
+                if (!input[inputKey]) {
+                    input[inputKey] = true;
+                    if (isJump) {
+                        input.jumpJustPressed = true;
+                        player.jumpBufferTimer = 0.14;
+                    }
+                    triggerHaptic('light');
+                }
+                btn.classList.add('pressed');
+            };
+
+            const release = (e) => {
+                if (e.cancelable) e.preventDefault();
+                input[inputKey] = false;
+                btn.classList.remove('pressed');
+            };
+
+            btn.addEventListener('touchstart', press, { passive: false });
+            btn.addEventListener('touchend', release, { passive: false });
+            btn.addEventListener('touchcancel', release, { passive: false });
+            btn.addEventListener('mousedown', press);
+            btn.addEventListener('mouseup', release);
+            btn.addEventListener('mouseleave', release);
+        }
+
+        bindTouchButton('btn-left', 'left', false);
+        bindTouchButton('btn-right', 'right', false);
+        bindTouchButton('btn-jump', 'jump', true);
+
+        window.addEventListener('keydown', (e) => {
+            if (['ArrowLeft', 'KeyA'].includes(e.code)) input.left = true;
+            if (['ArrowRight', 'KeyD'].includes(e.code)) input.right = true;
+            if (['ArrowUp', 'KeyW', 'Space'].includes(e.code)) {
+                if (!input.jump) {
+                    input.jumpJustPressed = true;
+                    player.jumpBufferTimer = 0.14;
+                }
+                input.jump = true;
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (['ArrowLeft', 'KeyA'].includes(e.code)) input.left = false;
+            if (['ArrowRight', 'KeyD'].includes(e.code)) input.right = false;
+            if (['ArrowUp', 'KeyW', 'Space'].includes(e.code)) input.jump = false;
+        });
+
+        // Кнопки интерфейса
+        document.getElementById('btn-start').addEventListener('click', () => {
+            SoundFX.init();
+            triggerHaptic('medium');
+            startNewGame();
+        });
+
+        document.getElementById('btn-restart-hud').addEventListener('click', () => {
+            triggerHaptic('medium');
+            player.hp = player.maxHp;
+            loadLevel(game.levelIndex);
+            game.state = 'playing';
+        });
+
+        document.getElementById('btn-sound').addEventListener('click', () => {
+            SoundFX.enabled = !SoundFX.enabled;
+            document.getElementById('icon-sound-on').classList.toggle('hidden', !SoundFX.enabled);
+            document.getElementById('icon-sound-off').classList.toggle('hidden', SoundFX.enabled);
+            triggerHaptic('light');
+        });
+
+        document.getElementById('btn-modal-action').addEventListener('click', () => {
+            triggerHaptic('medium');
+            screenModalEl.classList.add('hidden');
+            if (game.state === 'levelComplete') {
+                loadLevel(game.levelIndex + 1);
+                game.state = 'playing';
+                hudEl.classList.remove('hidden');
+                touchControlsEl.classList.remove('hidden');
+            } else {
+                startNewGame();
+            }
+        });
+
+        function startNewGame() {
+            game.score = 0;
+            player.hp = player.maxHp;
+            screenStartEl.classList.add('hidden');
+            screenModalEl.classList.add('hidden');
+            hudEl.classList.remove('hidden');
+            touchControlsEl.classList.remove('hidden');
+            loadLevel(0);
+            game.state = 'playing';
+        }
+
+        function showModal(type) {
+            game.state = type;
+            touchControlsEl.classList.add('hidden');
+            screenModalEl.classList.remove('hidden');
+
+            const titleEl = document.getElementById('modal-title');
+            const subEl = document.getElementById('modal-subtitle');
+            const btnEl = document.getElementById('btn-modal-action');
+
+            document.getElementById('modal-coins').textContent = `${game.coinsCollected} / ${game.totalCoins}`;
+            document.getElementById('modal-score').textContent = game.score;
+
+            if (type === 'levelComplete') {
+                titleEl.textContent = `УРОВЕНЬ ${game.levelIndex + 1} ПРОЙДЕН!`;
+                titleEl.className = 'text-2xl sm:text-3xl font-black text-emerald-400 mb-2';
+                subEl.textContent = 'Портал переносит тебя глубже в подземелье...';
+                btnEl.textContent = 'СЛЕДУЮЩИЙ УРОВЕНЬ';
+            } else if (type === 'victory') {
+                titleEl.textContent = 'ПОБЕДА!';
+                titleEl.className = 'text-2xl sm:text-3xl font-black text-amber-400 mb-2';
+                subEl.textContent = 'Ты покорил все залы Подземелья Теней!';
+                btnEl.textContent = 'ИГРАТЬ СНОВА';
+            } else if (type === 'gameOver') {
+                titleEl.textContent = 'ТЫ ПОГИБ';
+                titleEl.className = 'text-2xl sm:text-3xl font-black text-rose-500 mb-2';
+                subEl.textContent = 'Подземелье оказалось сильнее. Попробуешь ещё раз?';
+                btnEl.textContent = 'ЗАНОВО';
+            }
+        }
+
+        /**
+         * ============================================================================
+         * 7. ЧАСТИЦЫ И ФИЗИКА
+         * ============================================================================
+         */
+        function spawnParticles(x, y, color, count = 8, speed = 135) {
+            for (let i = 0; i < count; i++) {
+                if (game.particles.length >= MAX_PARTICLES) {
+                    game.particles.shift();
+                }
+                const angle = Math.random() * Math.PI * 2;
+                const spd = (0.3 + Math.random() * 0.7) * speed;
+                game.particles.push({
+                    x,
+                    y,
+                    vx: Math.cos(angle) * spd,
+                    vy: Math.sin(angle) * spd - 40,
+                    size: 2.5 + Math.random() * 3,
+                    color,
+                    life: 0.35 + Math.random() * 0.3,
+                    maxLife: 0.65
+                });
+            }
+        }
+
+        function aabbIntersect(a, b) {
+            return a.x < b.x + b.w &&
+                   a.x + a.w > b.x &&
+                   a.y < b.y + b.h &&
+                   a.y + a.h > b.y;
+        }
+
+        function damagePlayer() {
+            if (player.invulnTimer > 0 || game.state !== 'playing') return;
+
+            player.hp--;
+            player.invulnTimer = 1.25;
+            game.shakeTime = 0.25;
+            game.shakeIntensity = 6;
+            SoundFX.hurt();
+            triggerHaptic('error');
+            spawnParticles(player.x + player.w / 2, player.y + player.h / 2, '#f43f5e', 14, 170);
+            updateHUD();
+
+            if (player.hp <= 0) {
+                showModal('gameOver');
+            } else {
+                player.vy = -340;
+            }
+        }
+
+        function update(dt) {
+            game.time += dt;
+
+            if (game.shakeTime > 0) game.shakeTime -= dt;
+
+            // Обновление частиц
+            for (let i = game.particles.length - 1; i >= 0; i--) {
+                const p = game.particles[i];
+                p.x += p.vx * dt;
+                p.y += p.vy * dt;
+                p.vy += 320 * dt;
+                p.life -= dt;
+                if (p.life <= 0) {
+                    game.particles.splice(i, 1);
+                }
+            }
+
+            // Искры факелов (работают даже на стартовом экране для живого фона)
+            if (game.particles.length < MAX_PARTICLES - 8) {
+                for (let i = 0; i < levelData.torches.length; i++) {
+                    if (Math.random() < 0.14) {
+                        const t = levelData.torches[i];
+                        game.particles.push({
+                            x: t.x + (Math.random() - 0.5) * 6,
+                            y: t.y - 8,
+                            vx: (Math.random() - 0.5) * 18,
+                            vy: -35 - Math.random() * 35,
+                            size: 2 + Math.random() * 2,
+                            color: Math.random() > 0.4 ? '#fbbf24' : '#f97316',
+                            life: 0.35 + Math.random() * 0.25,
+                            maxLife: 0.6
+                        });
+                    }
+                }
+            }
+
+            if (game.state !== 'playing') return;
+
+            if (player.invulnTimer > 0) player.invulnTimer -= dt;
+            if (player.coyoteTimer > 0) player.coyoteTimer -= dt;
+            if (player.jumpBufferTimer > 0) player.jumpBufferTimer -= dt;
+
+            // Горизонтальное движение
+            let moveDir = 0;
+            if (input.left) moveDir -= 1;
+            if (input.right) moveDir += 1;
+
+            if (moveDir !== 0) {
+                player.facing = moveDir;
+                player.vx += (moveDir * player.speed - player.vx) * Math.min(1, dt * 18);
+                player.animTimer += dt * 12;
+            } else {
+                player.vx *= Math.pow(0.001, dt);
+                if (Math.abs(player.vx) < 4) player.vx = 0;
+                player.animTimer = 0;
+            }
+
+            // Прыжок (Coyote Time + Jump Buffer)
+            if (player.jumpBufferTimer > 0 && player.coyoteTimer > 0) {
+                player.vy = player.jumpForce;
+                player.grounded = false;
+                player.coyoteTimer = 0;
+                player.jumpBufferTimer = 0;
+                SoundFX.jump();
+                spawnParticles(player.x + player.w / 2, player.y + player.h, '#cbd5e1', 6, 75);
+            }
+
+            // Переменная высота прыжка при отпускании кнопки
+            if (!input.jump && player.vy < -230) {
+                player.vy += player.gravity * 1.25 * dt;
+            }
+
+            // Гравитация
+            player.vy += player.gravity * dt;
+            if (player.vy > 880) player.vy = 880;
+
+            // Коллизии по X
+            player.x += player.vx * dt;
+            for (let i = 0; i < levelData.solids.length; i++) {
+                const s = levelData.solids[i];
+                if (aabbIntersect(player, s)) {
+                    if (player.vx > 0) {
+                        player.x = s.x - player.w;
+                        player.vx = 0;
+                    } else if (player.vx < 0) {
+                        player.x = s.x + s.w;
+                        player.vx = 0;
+                    }
+                }
+            }
+
+            // Коллизии по Y
+            const prevBottom = player.y + player.h;
+            player.y += player.vy * dt;
+            const wasGrounded = player.grounded;
+            player.grounded = false;
+
+            for (let i = 0; i < levelData.solids.length; i++) {
+                const s = levelData.solids[i];
+                if (aabbIntersect(player, s)) {
+                    if (player.vy > 0) {
+                        player.y = s.y - player.h;
+                        player.vy = 0;
+                        player.grounded = true;
+                    } else if (player.vy < 0) {
+                        player.y = s.y + s.h;
+                        player.vy = 0;
+                    }
+                }
+            }
+
+            // Односторонние каменные платформы
+            if (player.vy >= 0) {
+                for (let i = 0; i < levelData.platforms.length; i++) {
+                    const p = levelData.platforms[i];
+                    if (prevBottom <= p.y + 6 && aabbIntersect(player, p)) {
+                        player.y = p.y - player.h;
+                        player.vy = 0;
+                        player.grounded = true;
+                    }
+                }
+            }
+
+            if (player.grounded) {
+                player.coyoteTimer = 0.12;
+                if (!wasGrounded && player.vy === 0) {
+                    spawnParticles(player.x + player.w / 2, player.y + player.h, '#94a3b8', 4, 55);
+                }
+            }
+
+            // Падение за пределы карты
+            if (player.y > levelData.height + 80) {
+                damagePlayer();
+                if (player.hp > 0) resetPlayerPosition();
+            }
+
+            // Шипы
+            for (let i = 0; i < levelData.spikes.length; i++) {
+                if (aabbIntersect(player, levelData.spikes[i])) {
+                    damagePlayer();
+                    break;
+                }
+            }
+
+            // Сбор монет
+            for (let i = 0; i < levelData.coins.length; i++) {
+                const c = levelData.coins[i];
+                if (c.collected) continue;
+                const dx = (player.x + player.w / 2) - c.x;
+                const dy = (player.y + player.h / 2) - c.y;
+                if (dx * dx + dy * dy < (c.r + 16) * (c.r + 16)) {
+                    c.collected = true;
+                    game.coinsCollected++;
+                    game.score += 100;
+                    SoundFX.coin();
+                    triggerHaptic('light');
+                    spawnParticles(c.x, c.y, '#fbbf24', 10, 125);
+                    updateHUD();
+                }
+            }
+
+            // Логика врагов (Слизни)
+            for (let i = levelData.enemies.length - 1; i >= 0; i--) {
+                const e = levelData.enemies[i];
+                e.anim += dt * 7;
+                e.x += e.vx * e.dir * dt;
+
+                let hitWall = false;
+                for (let j = 0; j < levelData.solids.length; j++) {
+                    if (aabbIntersect(e, levelData.solids[j])) {
+                        hitWall = true;
+                        break;
+                    }
+                }
+
+                const probeX = e.dir > 0 ? e.x + e.w + 4 : e.x - 4;
+                const probeY = e.y + e.h + 6;
+                let hasFloorAhead = false;
+                for (let j = 0; j < levelData.solids.length; j++) {
+                    const s = levelData.solids[j];
+                    if (probeX >= s.x && probeX <= s.x + s.w && probeY >= s.y && probeY <= s.y + s.h) {
+                        hasFloorAhead = true;
+                        break;
+                    }
+                }
+
+                if (hitWall || !hasFloorAhead) {
+                    e.dir *= -1;
+                    e.x += e.vx * e.dir * dt * 2;
+                }
+
+                if (aabbIntersect(player, e)) {
+                    const isStomping = player.vy > 0 && (player.y + player.h - player.vy * dt) <= e.y + e.h * 0.55;
+                    if (isStomping) {
+                        levelData.enemies.splice(i, 1);
+                        player.vy = -440;
+                        game.score += 250;
+                        SoundFX.stomp();
+                        triggerHaptic('medium');
+                        spawnParticles(e.x + e.w / 2, e.y + e.h / 2, '#4ade80', 14, 155);
+                    } else {
+                        damagePlayer();
+                    }
+                }
+            }
+
+            // Проверка портала выхода
+            if (levelData.portal && aabbIntersect(player, levelData.portal)) {
+                game.score += 500 + player.hp * 100;
+                SoundFX.portal();
+                triggerHaptic('success');
+                spawnParticles(levelData.portal.x + levelData.portal.w / 2, levelData.portal.y + levelData.portal.h / 2, '#c084fc', 20, 190);
+
+                if (game.levelIndex + 1 < LEVELS.length) {
+                    showModal('levelComplete');
+                } else {
+                    showModal('victory');
+                }
+            }
+
+            // Плавное слежение камеры
+            const viewW = Math.max(320, canvas.width / currentDpr);
+            const viewH = Math.max(320, canvas.height / currentDpr);
+            const targetCamX = player.x + player.w / 2 - viewW / 2;
+            const targetCamY = player.y + player.h / 2 - viewH / 2 + 20;
+
+            const maxCamX = Math.max(0, levelData.width - viewW);
+            const maxCamY = Math.max(0, levelData.height - viewH);
+
+            game.camera.x += (Math.max(0, Math.min(maxCamX, targetCamX)) - game.camera.x) * Math.min(1, dt * 9);
+            game.camera.y += (Math.max(0, Math.min(maxCamY, targetCamY)) - game.camera.y) * Math.min(1, dt * 9);
+        }
+
+        /**
+         * ============================================================================
+         * 8. ОТРИСОВКА (ЯРКАЯ, ЧЕТКАЯ, С ОТСЕЧЕНИЕМ ЗА КАМЕРОЙ)
+         * ============================================================================
+         */
+        function render() {
+            const viewW = Math.max(1, canvas.width / currentDpr);
+            const viewH = Math.max(1, canvas.height / currentDpr);
+
+            ctx.save();
+            ctx.scale(currentDpr, currentDpr);
+
+            // Глубокий фон подземелья
+            ctx.fillStyle = '#14121d';
+            ctx.fillRect(0, 0, viewW, viewH);
+
+            // Параллакс-кладка на заднем плане
+            drawParallaxBricks(viewW, viewH);
+
+            // Смещение камеры и тряска
+            let shakeX = 0, shakeY = 0;
+            if (game.shakeTime > 0) {
+                shakeX = (Math.random() - 0.5) * game.shakeIntensity * 2;
+                shakeY = (Math.random() - 0.5) * game.shakeIntensity * 2;
+            }
+            const camX = Math.floor(game.camera.x + shakeX);
+            const camY = Math.floor(game.camera.y + shakeY);
+            ctx.translate(-camX, -camY);
+
+            // Границы видимой области экрана (Frustum Culling)
+            const cullLeft = camX - 80;
+            const cullRight = camX + viewW + 80;
+            const cullTop = camY - 80;
+            const cullBottom = camY + viewH + 80;
+
+            // 1. Факелы и теплое свечение
+            for (let i = 0; i < levelData.torches.length; i++) {
+                const t = levelData.torches[i];
+                if (t.x < cullLeft || t.x > cullRight || t.y < cullTop || t.y > cullBottom) continue;
+
+                const flicker = Math.sin(game.time * 14 + t.flicker) * 5;
+                ctx.fillStyle = 'rgba(249, 115, 22, 0.11)';
+                ctx.beginPath();
+                ctx.arc(t.x, t.y - 6, 66 + flicker, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = 'rgba(251, 191, 36, 0.2)';
+                ctx.beginPath();
+                ctx.arc(t.x, t.y - 6, 34 + flicker * 0.5, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#92400e';
+                ctx.fillRect(t.x - 3, t.y - 4, 6, 16);
+
+                ctx.fillStyle = '#f97316';
+                ctx.beginPath();
+                ctx.arc(t.x, t.y - 7, 6 + flicker * 0.15, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#fef08a';
+                ctx.beginPath();
+                ctx.arc(t.x, t.y - 6, 3.2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // 2. Портал выхода
+            if (levelData.portal) {
+                const p = levelData.portal;
+                if (p.x + p.w >= cullLeft && p.x <= cullRight && p.y + p.h >= cullTop && p.y <= cullBottom) {
+                    const pulse = Math.sin(game.time * 5) * 4;
+                    const cx = p.x + p.w / 2;
+                    const cy = p.y + p.h / 2;
+
+                    ctx.fillStyle = 'rgba(168, 85, 247, 0.2)';
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, 56 + pulse, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    ctx.fillStyle = '#3b3654';
+                    ctx.fillRect(p.x - 6, p.y - 6, p.w + 12, p.h + 6);
+                    ctx.fillStyle = '#9333ea';
+                    ctx.fillRect(p.x, p.y, p.w, p.h);
+                    ctx.fillStyle = '#38bdf8';
+                    ctx.fillRect(p.x + 4, p.y + 4, p.w - 8, p.h - 8);
+
+                    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+                    ctx.fillRect(p.x + 8 + Math.sin(game.time * 6) * 4, p.y + 8, 4, p.h - 16);
+                }
+            }
+
+            // 3. Каменные блоки стен/пола
+            ctx.lineWidth = 2;
+            for (let i = 0; i < levelData.solids.length; i++) {
+                const s = levelData.solids[i];
+                if (s.x + s.w < cullLeft || s.x > cullRight || s.y + s.h < cullTop || s.y > cullBottom) continue;
+
+                ctx.fillStyle = '#2d2942';
+                ctx.fillRect(s.x, s.y, s.w, s.h);
+
+                ctx.fillStyle = '#474066';
+                ctx.fillRect(s.x, s.y, s.w, 5);
+
+                ctx.strokeStyle = '#1b1829';
+                ctx.strokeRect(s.x + 1, s.y + 1, s.w - 2, s.h - 2);
+                ctx.beginPath();
+                ctx.moveTo(s.x, s.y + s.h / 2);
+                ctx.lineTo(s.x + s.w, s.y + s.h / 2);
+                ctx.moveTo(s.x + s.w / 2, s.y);
+                ctx.lineTo(s.x + s.w / 2, s.y + s.h / 2);
+                ctx.stroke();
+            }
+
+            // 4. Каменные мостики-платформы
+            for (let i = 0; i < levelData.platforms.length; i++) {
+                const p = levelData.platforms[i];
+                if (p.x + p.w < cullLeft || p.x > cullRight || p.y + p.h < cullTop || p.y > cullBottom) continue;
+
+                ctx.fillStyle = '#564d7d';
+                ctx.fillRect(p.x, p.y, p.w, p.h);
+                ctx.fillStyle = '#7c70b0';
+                ctx.fillRect(p.x, p.y, p.w, 4);
+                ctx.strokeStyle = '#1e1b2e';
+                ctx.lineWidth = 1.5;
+                ctx.strokeRect(p.x, p.y, p.w, p.h);
+            }
+
+            // 5. Шипы
+            for (let i = 0; i < levelData.spikes.length; i++) {
+                const sp = levelData.spikes[i];
+                if (sp.x + sp.w < cullLeft || sp.x > cullRight || sp.y + sp.h < cullTop || sp.y > cullBottom) continue;
+
+                const count = 3;
+                const spikeW = sp.w / count;
+                for (let j = 0; j < count; j++) {
+                    const sx = sp.x + j * spikeW;
+                    ctx.fillStyle = '#cbd5e1';
+                    ctx.beginPath();
+                    ctx.moveTo(sx, sp.y + sp.h);
+                    ctx.lineTo(sx + spikeW / 2, sp.y);
+                    ctx.lineTo(sx + spikeW, sp.y + sp.h);
+                    ctx.closePath();
+                    ctx.fill();
+
+                    ctx.fillStyle = '#f43f5e';
+                    ctx.beginPath();
+                    ctx.moveTo(sx + spikeW * 0.35, sp.y + sp.h * 0.35);
+                    ctx.lineTo(sx + spikeW / 2, sp.y);
+                    ctx.lineTo(sx + spikeW * 0.65, sp.y + sp.h * 0.35);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+            }
+
+            // 6. Монеты
+            for (let i = 0; i < levelData.coins.length; i++) {
+                const c = levelData.coins[i];
+                if (c.collected || c.x < cullLeft || c.x > cullRight || c.y < cullTop || c.y > cullBottom) continue;
+
+                const bob = Math.sin(game.time * 4.5 + c.bobOffset) * 3.5;
+                const scaleX = Math.abs(Math.cos(game.time * 3.5 + c.bobOffset));
+
+                ctx.save();
+                ctx.translate(c.x, c.y + bob);
+                ctx.scale(Math.max(0.25, scaleX), 1);
+
+                ctx.fillStyle = '#f59e0b';
+                ctx.beginPath();
+                ctx.arc(0, 0, c.r, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.strokeStyle = '#fef08a';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                ctx.fillStyle = '#fef08a';
+                ctx.fillRect(-1.5, -4.5, 3, 9);
+                ctx.restore();
+            }
+
+            // 7. Враги (Слизни)
+            for (let i = 0; i < levelData.enemies.length; i++) {
+                const e = levelData.enemies[i];
+                if (e.x + e.w < cullLeft || e.x > cullRight || e.y + e.h < cullTop || e.y > cullBottom) continue;
+
+                const squish = Math.sin(e.anim) * 2.5;
+                const drawX = e.x - squish / 2;
+                const drawY = e.y + squish;
+                const drawW = e.w + squish;
+                const drawH = e.h - squish;
+
+                ctx.fillStyle = '#22c55e';
+                ctx.beginPath();
+                ctx.roundRect(drawX, drawY, drawW, drawH, [12, 12, 4, 4]);
+                ctx.fill();
+
+                ctx.fillStyle = '#86efac';
+                ctx.fillRect(drawX + 5, drawY + 3, drawW - 10, 4);
+
+                const eyeOffsetX = e.dir > 0 ? 6 : -6;
+                ctx.fillStyle = '#0f172a';
+                ctx.fillRect(drawX + drawW / 2 + eyeOffsetX - 5, drawY + 9, 4, 5);
+                ctx.fillRect(drawX + drawW / 2 + eyeOffsetX + 2, drawY + 9, 4, 5);
+            }
+
+            // 8. Игрок (Рыцарь)
+            drawPlayer();
+
+            // 9. Частицы
+            for (let i = 0; i < game.particles.length; i++) {
+                const p = game.particles[i];
+                ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+                ctx.fillStyle = p.color;
+                ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+            }
+            ctx.globalAlpha = 1;
+
+            ctx.restore();
+        }
+
+        function drawParallaxBricks(viewW, viewH) {
+            const brickW = 80;
+            const brickH = 40;
+            const offsetX = -(game.camera.x * 0.25) % brickW;
+            const offsetY = -(game.camera.y * 0.25) % brickH;
+
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+            ctx.lineWidth = 1;
+
+            for (let y = offsetY - brickH; y < viewH + brickH; y += brickH) {
+                const rowIdx = Math.floor((y - offsetY) / brickH);
+                const stagger = (rowIdx % 2 === 0) ? 0 : brickW / 2;
+                for (let x = offsetX - brickW; x < viewW + brickW; x += brickW) {
+                    ctx.strokeRect(x + stagger, y, brickW, brickH);
+                }
+            }
+        }
+
+        function drawPlayer() {
+            if (player.invulnTimer > 0 && Math.floor(player.invulnTimer * 16) % 2 === 0) {
+                return;
+            }
+
+            const px = Math.floor(player.x);
+            const py = Math.floor(player.y);
+            const walkBob = player.grounded && Math.abs(player.vx) > 15 ? Math.sin(player.animTimer) * 2 : 0;
+
+            ctx.save();
+            ctx.translate(px + player.w / 2, py + player.h / 2);
+            ctx.scale(player.facing, 1);
+
+            // Красный плащ
+            ctx.fillStyle = '#e11d48';
+            ctx.beginPath();
+            ctx.moveTo(-6, -4 + walkBob);
+            ctx.lineTo(-16 - Math.abs(player.vx) * 0.02, 14);
+            ctx.lineTo(-4, 14);
+            ctx.closePath();
+            ctx.fill();
+
+            // Доспехи
+            ctx.fillStyle = '#94a3b8';
+            ctx.fillRect(-9, -4 + walkBob, 18, 16);
+
+            // Шлем
+            ctx.fillStyle = '#e2e8f0';
+            ctx.fillRect(-10, -17 + walkBob, 20, 14);
+
+            // Плюмаж на шлеме
+            ctx.fillStyle = '#8b5cf6';
+            ctx.fillRect(-4, -22 + walkBob, 8, 5);
+
+            // Визор
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(1, -12 + walkBob, 8, 4);
+            ctx.fillStyle = '#38bdf8';
+            ctx.fillRect(3, -11 + walkBob, 4, 2);
+
+            // Ноги
+            const legOffset = player.grounded ? Math.sin(player.animTimer) * 4 : 3;
+            ctx.fillStyle = '#475569';
+            ctx.fillRect(-7 + legOffset, 12, 5, 5);
+            ctx.fillRect(2 - legOffset, 12, 5, 5);
+
+            ctx.restore();
+        }
+
+        /**
+         * ============================================================================
+         * 9. АДАПТИВНЫЙ РАЗМЕР CANVAS И СИНХРОННЫЙ ЗАПУСК ПЕРВОГО КАДРА
+         * ============================================================================
+         */
+        function resizeCanvas() {
+            currentDpr = Math.min(window.devicePixelRatio || 1, 1.5);
+            const rect = canvas.getBoundingClientRect();
+            let w = Math.floor(rect.width || window.innerWidth || document.documentElement.clientWidth || 0);
+            let h = Math.floor(rect.height || window.innerHeight || document.documentElement.clientHeight || 0);
+
+            // Жесткий фолбэк при нулевой высоте в момент открытия WebView/iframe
+            if (w <= 0) w = 360;
+            if (h <= 0) h = 640;
+
+            canvas.width = Math.floor(w * currentDpr);
+            canvas.height = Math.floor(h * currentDpr);
+
+            if (levelData && levelData.solids && levelData.solids.length > 0) {
+                render();
+            }
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        try {
+            if (tgApp && tgApp.onEvent) {
+                tgApp.onEvent('viewportChanged', resizeCanvas);
+            }
+        } catch (e) {}
+
+        let lastTimestamp = 0;
+
+        function gameLoop(timestamp) {
+            if (!lastTimestamp) lastTimestamp = timestamp;
+            const frameDt = Math.min(0.05, (timestamp - lastTimestamp) / 1000);
+            lastTimestamp = timestamp;
+
+            physicsAccumulator += frameDt;
+            while (physicsAccumulator >= FIXED_DT) {
+                update(FIXED_DT);
+                physicsAccumulator -= FIXED_DT;
+            }
+
+            render();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Мгновенная синхронная инициализация и отрисовка первого кадра без ожидания onload
+        resizeCanvas();
+        loadLevel(0);
+        render();
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
+```
